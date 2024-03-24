@@ -1,0 +1,1965 @@
+#include "cache.h"
+
+#include "cache.h"
+#include <cstdlib>
+#include <ctime>
+#include <fstream>
+#include <vector>
+#include <cstdint>
+#include <string>
+#include <sstream>
+#include <random>
+#include <string.h>
+#include <iostream>
+#define FALSE 0
+int print_counter = 0;
+#define H_EP 1
+#define M_EP 0
+#define L_EP 2
+#define BYPASSING 3
+
+#define EPSILON 0.001
+#define ALPHA 0.04978706836
+#define GAMMA 0.36787944117
+#define NUM_FEATURE 2
+#define NUM_TILING 4
+#define NUM_TILE 512
+#define NUM_ACTION 4 // 0/1/2: moderate/high/low eviction priority 3: bypassing
+#define SEED 200
+#define HASH_TYPE 2
+
+#define TYPE_AC_D_ONE 0
+#define TYPE_AC_D_TWO 1
+#define TYPE_AC_D_THREE 2
+#define TYPE_AC_D_FOUR 3
+#define TYPE_AC_P_ONE 4
+#define TYPE_AC_P_TWO 5
+#define TYPE_AC_P_THREE 6
+#define TYPE_AC_P_FOUR 7
+#define TYPE_IN_D_ONE 8
+#define TYPE_IN_D_TWO 9
+#define TYPE_IN_D_THREE 10
+#define TYPE_IN_D_FOUR 11
+#define TYPE_IN_P_ONE 12 
+#define TYPE_IN_P_TWO 13
+#define TYPE_IN_P_THREE 14
+#define TYPE_IN_P_FOUR 15
+#define TYPE_IN_OB 16
+#define TYPE_IN_NOB 17
+#define TYPE_AC_OB 18
+#define TYPE_AC_NOB 19
+
+#define REWARD_AC_D_ONE 20
+#define REWARD_AC_D_TWO 20
+#define REWARD_AC_D_THREE 20
+#define REWARD_AC_D_FOUR 20
+#define REWARD_AC_P_ONE 5
+#define REWARD_AC_P_TWO 5
+#define REWARD_AC_P_THREE 5
+#define REWARD_AC_P_FOUR 5
+#define REWARD_IN_D_ONE -20
+#define REWARD_IN_D_TWO -20
+#define REWARD_IN_D_THREE -20
+#define REWARD_IN_D_FOUR -20
+#define REWARD_IN_P_ONE -5
+#define REWARD_IN_P_TWO -5
+#define REWARD_IN_P_THREE -5
+#define REWARD_IN_P_FOUR -5
+#define REWARD_IN_OB -22
+#define REWARD_IN_NOB -10
+#define REWARD_AC_OB 28
+#define REWARD_AC_NOB 10
+
+
+int count_AC_D_ONE = 0;
+int count_AC_D_TWO = 0;
+int count_AC_D_THREE = 0;
+int count_AC_D_FOUR = 0;
+
+int count_AC_P_ONE = 0;
+int count_AC_P_TWO = 0;
+int count_AC_P_THREE = 0;
+int count_AC_P_FOUR = 0;
+
+int count_IN_D_ONE = 0;
+int count_IN_D_TWO = 0;
+int count_IN_D_THREE = 0;
+int count_IN_D_FOUR = 0;
+
+int count_IN_P_ONE = 0;
+int count_IN_P_TWO = 0;
+int count_IN_P_THREE = 0;
+int count_IN_P_FOUR = 0;
+
+int count_AC_D = 0;
+int count_AC_P = 0;
+int count_IN_D = 0;
+int count_IN_P = 0;
+int count_IN_OB = 0;
+int count_IN_NOB = 0;
+int count_AC_OB = 0;
+int count_AC_NOB = 0;
+
+int act_AC_D_ONE = 0;
+int act_AC_D_TWO = 0;
+int act_AC_D_THREE = 0;
+int act_AC_D_FOUR = 0;
+
+int act_AC_P_ONE = 0;
+int act_AC_P_TWO = 0;
+int act_AC_P_THREE = 0;
+int act_AC_P_FOUR = 0;
+
+
+int act_IN_D_ONE = 0;
+int act_IN_D_TWO = 0;
+int act_IN_D_THREE = 0;
+int act_IN_D_FOUR = 0;
+
+int act_IN_P_ONE = 0;
+int act_IN_P_TWO = 0;
+int act_IN_P_THREE = 0;
+int act_IN_P_FOUR = 0;
+
+int act_IN_OB = 0;
+int act_IN_NOB = 0;
+int act_AC_OB = 0;
+int act_AC_NOB = 0;
+
+int hit_action_zero = 0;
+int hit_action_one = 0;
+int hit_action_two = 0;
+int hit_action_three = 0;
+int miss_action_zero = 0;
+int miss_action_one = 0;
+int miss_action_two = 0;
+int miss_action_three = 0;
+
+int hit_action_zero_random = 0;
+int hit_action_one_random = 0;
+int hit_action_two_random = 0;
+int hit_action_three_random = 0;
+int miss_action_zero_random = 0;
+int miss_action_one_random = 0;
+int miss_action_two_random = 0;
+int miss_action_three_random = 0;
+
+
+#define REWARD_ALL 0
+//#define EQ_SIZE 12 // 2MB LLC, 32768 blocks
+uint32_t eq_size = 28;
+#define N 999999
+
+
+#define maxRRPV 3
+uint32_t rrpv[LLC_SET][LLC_WAY];
+uint32_t is_prefetch[LLC_SET][LLC_WAY];
+uint32_t cal_level = 0;
+uint32_t set_sample[LLC_SET];
+#define NUM_LEADER_SETS	64
+uint32_t c = 0;
+int eq_hit = 0;
+int actual_sampled_set_hit = 0;
+int actual_sampled_set_miss = 0;
+int demand = 0;
+int eq_miss_cache_hit = 0;
+int eq_hit_cache_hit = 0;
+int eq_miss_cache_miss = 0;
+int eq_hit_cache_miss = 0;
+
+
+class State
+{
+public:
+        uint64_t pc;
+        uint64_t address;
+        uint64_t page;
+        uint32_t offset;
+        uint32_t core;
+
+        void reset()
+        {
+                pc = 0xdeadbeef;
+                address = 0xdeadbeef;
+                page = 0xdeadbeef;
+                offset = 0;
+                core = 0;
+        }
+        State(){reset();}
+        ~State(){}
+};
+
+
+class Naper_EQEntry
+{
+public:
+        uint64_t address;
+        State *state;
+        uint32_t action_index;
+        int32_t reward;
+        int32_t reward_type;
+        bool has_reward;
+	bool in_cache;
+	uint32_t cpu;
+	vector<bool> consensus_vec;
+	uint32_t random;
+	uint64_t position;
+	bool trigger; // false->miss; true->hit
+        Naper_EQEntry(uint64_t ad, State *st, uint32_t ac, bool ic, uint32_t cp) : address(ad), state(st), action_index(ac), in_cache(ic), cpu(cp)
+        {
+                reward = 0;
+                reward_type = -1;
+                has_reward = false;
+		random = 0;
+		position = eq_size - 1;
+		trigger = false;
+        }
+	~Naper_EQEntry(){}
+};
+
+
+
+
+
+deque<Naper_EQEntry*> evaluation_queue[LLC_SET];
+float q_table[NUM_FEATURE][NUM_TILING][NUM_TILE][NUM_ACTION];
+Naper_EQEntry* last_evicted_eqentry[LLC_SET];
+
+
+
+const uint32_t tiling_offset[] = {	0xaca081b9,0x666a1c67,0xc11d6a53,0x8e5d97c1,0x0d1cad54,0x874f71cb,0x20d2fa13,0x73f7c4a7,
+									0x0b701f6c,0x8388d86d,0xf72ac9f2,0xbab16d82,0x524ac258,0xb5900302,0xb48ccc72,0x632f05bf,
+									0xe7111073,0xeb602af4,0xf3f29ebb,0x2a6184f2,0x461da5da,0x6693471d,0x62fd0138,0xc484efb3,
+									0x81c9eeeb,0x860f3766,0x334faf86,0x5e81e881,0x14bc2195,0xf47671a8,0x75414279,0x357bc5e0
+								};
+
+
+
+
+class HashZoo
+{
+public:
+	static uint32_t jenkins(uint32_t key);
+	static uint32_t knuth(uint32_t key);
+	static uint32_t murmur3(uint32_t key);
+	static uint32_t jenkins32(uint32_t key);
+	static uint32_t hash32shift(uint32_t key);
+	static uint32_t hash32shiftmult(uint32_t key);
+	static uint32_t hash64shift(uint32_t key);
+	static uint32_t hash5shift(uint32_t key);
+	static uint32_t hash7shift(uint32_t key);
+	static uint32_t Wang6shift(uint32_t key);
+	static uint32_t Wang5shift(uint32_t key);
+	static uint32_t Wang4shift( uint32_t key);
+	static uint32_t Wang3shift( uint32_t key);
+
+    static uint32_t three_hybrid1(uint32_t key);
+    static uint32_t three_hybrid2(uint32_t key);
+    static uint32_t three_hybrid3(uint32_t key);
+    static uint32_t three_hybrid4(uint32_t key);
+    static uint32_t three_hybrid5(uint32_t key);
+    static uint32_t three_hybrid6(uint32_t key);
+    static uint32_t three_hybrid7(uint32_t key);
+    static uint32_t three_hybrid8(uint32_t key);
+    static uint32_t three_hybrid9(uint32_t key);
+    static uint32_t three_hybrid10(uint32_t key);
+    static uint32_t three_hybrid11(uint32_t key);
+    static uint32_t three_hybrid12(uint32_t key);
+
+    static uint32_t four_hybrid1(uint32_t key);
+    static uint32_t four_hybrid2(uint32_t key);
+    static uint32_t four_hybrid3(uint32_t key);
+    static uint32_t four_hybrid4(uint32_t key);
+    static uint32_t four_hybrid5(uint32_t key);
+    static uint32_t four_hybrid6(uint32_t key);
+    static uint32_t four_hybrid7(uint32_t key);
+    static uint32_t four_hybrid8(uint32_t key);
+    static uint32_t four_hybrid9(uint32_t key);
+    static uint32_t four_hybrid10(uint32_t key);
+    static uint32_t four_hybrid11(uint32_t key);
+    static uint32_t four_hybrid12(uint32_t key);
+
+    static uint32_t getHash(uint32_t selector, uint32_t key);
+};
+
+
+
+
+uint32_t folded_xor(uint64_t value, uint32_t num_folds)
+{
+	assert(num_folds > 1);
+	assert((num_folds & (num_folds-1)) == 0); /* has to be power of 2 */
+	uint32_t mask = 0;
+	uint32_t bits_in_fold = 64/num_folds;
+	if(num_folds == 2)
+	{
+		mask = 0xffffffff;
+	}
+	else
+	{
+		mask = (1ul << bits_in_fold) - 1;
+	}
+	uint32_t folded_value = 0;
+	for(uint32_t fold = 0; fold < num_folds; ++fold)
+	{
+		folded_value = folded_value ^ ((value >> (fold * bits_in_fold)) & mask);
+	}
+	return folded_value;
+}
+
+uint32_t HashZoo::jenkins(uint32_t key)
+{
+    // Robert Jenkins' 32 bit mix function
+    key += (key << 12);
+    key ^= (key >> 22);
+    key += (key << 4);
+    key ^= (key >> 9);
+    key += (key << 10);
+    key ^= (key >> 2);
+    key += (key << 7);
+    key ^= (key >> 12);
+    return key;
+}
+
+uint32_t HashZoo::knuth(uint32_t key)
+{
+    // Knuth's multiplicative method
+    key = (key >> 3) * 2654435761;
+    return key;
+}
+
+uint32_t HashZoo::murmur3(uint32_t key)
+{
+	/* TODO: define it using murmur3's finilization steps */
+	assert(false);
+}
+
+/* originally ment for 32b key */
+uint32_t HashZoo::jenkins32(uint32_t key)
+{
+   key = (key+0x7ed55d16) + (key<<12);
+   key = (key^0xc761c23c) ^ (key>>19);
+   key = (key+0x165667b1) + (key<<5);
+   key = (key+0xd3a2646c) ^ (key<<9);
+   key = (key+0xfd7046c5) + (key<<3);
+   key = (key^0xb55a4f09) ^ (key>>16);
+   return key;
+}
+
+/* originally ment for 32b key */
+uint32_t HashZoo::hash32shift(uint32_t key)
+{
+	key = ~key + (key << 15); // key = (key << 15) - key - 1;
+	key = key ^ (key >> 12);
+	key = key + (key << 2);
+	key = key ^ (key >> 4);
+	key = key * 2057; // key = (key + (key << 3)) + (key << 11);
+	key = key ^ (key >> 16);
+	return key;
+}
+
+/* originally ment for 32b key */
+uint32_t HashZoo::hash32shiftmult(uint32_t key)
+{
+	int c2=0x27d4eb2d; // a prime or an odd constant
+	key = (key ^ 61) ^ (key >> 16);
+	key = key + (key << 3);
+	key = key ^ (key >> 4);
+	key = key * c2;
+	key = key ^ (key >> 15);
+	return key;
+}
+
+uint32_t HashZoo::hash64shift(uint32_t key)
+{
+	key = (~key) + (key << 21); // key = (key << 21) - key - 1;
+	key = key ^ (key >> 24);
+	key = (key + (key << 3)) + (key << 8); // key * 265
+	key = key ^ (key >> 14);
+	key = (key + (key << 2)) + (key << 4); // key * 21
+	key = key ^ (key >> 28);
+	key = key + (key << 31);
+	return key;
+}
+
+uint32_t HashZoo::hash5shift(uint32_t key)
+{
+	key = (key ^ 61) ^ (key >> 16);
+    	key = key + (key << 3);
+    	key = key ^ (key >> 4);
+    	key = key * 0x27d4eb2d;
+    	key = key ^ (key >> 15);
+    	return key;
+}
+
+/* hash6shift is jenkin32 */
+
+uint32_t HashZoo::hash7shift(uint32_t key)
+{
+    key -= (key << 6);
+    key ^= (key >> 17);
+    key -= (key << 9);
+    key ^= (key << 4);
+    key -= (key << 3);
+    key ^= (key << 10);
+    key ^= (key >> 15);
+    return key ;
+}
+
+/* use low bit values */
+uint32_t HashZoo::Wang6shift(uint32_t key)
+{
+    key += ~(key << 15);
+    key ^=  (key >> 10);
+    key +=  (key << 3);
+    key ^=  (key >> 6);
+    key += ~(key << 11);
+    key ^=  (key >> 16);
+    return key;
+}
+
+uint32_t HashZoo::Wang5shift(uint32_t key)
+{
+    key = (key + 0x479ab41d) + (key << 8);
+    key = (key ^ 0xe4aa10ce) ^ (key >> 5);
+    key = (key + 0x9942f0a6) - (key << 14);
+    key = (key ^ 0x5aedd67d) ^ (key >> 3);
+    key = (key + 0x17bea992) + (key << 7);
+    return key;
+}
+
+
+uint32_t HashZoo::Wang4shift( uint32_t key)
+{
+    key = (key ^ 0xdeadbeef) + (key << 4);
+    key = key ^ (key >> 10);
+    key = key + (key << 7);
+    key = key ^ (key >> 13);
+    return key;
+}
+
+uint32_t HashZoo::Wang3shift( uint32_t key)
+{
+    key = key ^ (key >> 4);
+    key = (key ^ 0xdeadbeef) + (key << 5);
+    key = key ^ (key >> 11);
+    return key;
+}
+
+uint32_t HashZoo::three_hybrid1(uint32_t key) { return knuth(hash64shift(jenkins32(key))); }
+uint32_t HashZoo::three_hybrid2(uint32_t key) { return jenkins32(Wang5shift(hash5shift(key))); }
+uint32_t HashZoo::three_hybrid3(uint32_t key) { return jenkins(hash32shiftmult(Wang3shift(key))); }
+uint32_t HashZoo::three_hybrid4(uint32_t key) { return Wang6shift(hash32shift(Wang5shift(key))); }
+uint32_t HashZoo::three_hybrid5(uint32_t key) { return hash64shift(hash32shift(knuth(key))); }
+uint32_t HashZoo::three_hybrid6(uint32_t key) { return hash5shift(jenkins(Wang6shift(key))); }
+uint32_t HashZoo::three_hybrid7(uint32_t key) { return Wang4shift(jenkins32(hash7shift(key))); }
+uint32_t HashZoo::three_hybrid8(uint32_t key) { return Wang3shift(Wang6shift(hash64shift(key))); }
+uint32_t HashZoo::three_hybrid9(uint32_t key) { return hash32shift(Wang3shift(jenkins(key))); }
+uint32_t HashZoo::three_hybrid10(uint32_t key) { return hash32shiftmult(Wang4shift(hash32shiftmult(key))); }
+uint32_t HashZoo::three_hybrid11(uint32_t key) { return hash7shift(hash5shift(Wang4shift(key))); }
+uint32_t HashZoo::three_hybrid12(uint32_t key) { return Wang5shift(jenkins32(hash32shift(key))); }
+
+uint32_t HashZoo::four_hybrid1(uint32_t key) { return Wang6shift(Wang5shift(Wang3shift(Wang4shift(key)))); }
+uint32_t HashZoo::four_hybrid2(uint32_t key) { return hash32shiftmult(jenkins(Wang5shift(Wang6shift(key)))); }
+uint32_t HashZoo::four_hybrid3(uint32_t key) { return hash64shift(hash7shift(jenkins32(hash32shift(key)))); }
+uint32_t HashZoo::four_hybrid4(uint32_t key) { return knuth(knuth(hash32shiftmult(hash5shift(key)))); }
+uint32_t HashZoo::four_hybrid5(uint32_t key) { return jenkins32(Wang4shift(hash64shift(hash32shiftmult(key)))); }
+uint32_t HashZoo::four_hybrid6(uint32_t key) { return jenkins(hash32shift(Wang4shift(Wang3shift(key)))); }
+uint32_t HashZoo::four_hybrid7(uint32_t key) { return hash32shift(hash64shift(hash5shift(hash64shift(key)))); }
+uint32_t HashZoo::four_hybrid8(uint32_t key) { return hash7shift(hash5shift(hash32shiftmult(Wang6shift(key)))); }
+uint32_t HashZoo::four_hybrid9(uint32_t key) { return hash32shiftmult(Wang6shift(jenkins32(knuth(key)))); }
+uint32_t HashZoo::four_hybrid10(uint32_t key) { return Wang3shift(jenkins32(knuth(jenkins(key)))); }
+uint32_t HashZoo::four_hybrid11(uint32_t key) { return hash5shift(hash32shiftmult(hash32shift(jenkins32(key)))); }
+uint32_t HashZoo::four_hybrid12(uint32_t key) { return Wang4shift(Wang3shift(jenkins(hash7shift(key)))); }
+
+
+uint32_t HashZoo::getHash(uint32_t selector, uint32_t key)
+{
+    switch(selector)
+    {
+        case 1:     return key;
+        case 2:     return jenkins(key);
+        case 3:     return knuth(key);
+        case 4:     return murmur3(key);
+        case 5:     return jenkins32(key);
+        case 6:     return hash32shift(key);
+        case 7:     return hash32shiftmult(key);
+        case 8:     return hash64shift(key);
+        case 9:     return hash5shift(key);
+        case 10:    return hash7shift(key);
+        case 11:    return Wang6shift(key);
+        case 12:    return Wang5shift(key);
+        case 13:    return Wang4shift(key);
+        case 14:    return Wang3shift(key);
+
+        /* three hybrid */
+        case 101:  return three_hybrid1(key);
+        case 102:  return three_hybrid2(key);
+        case 103:  return three_hybrid3(key);
+        case 104:  return three_hybrid4(key);
+        case 105:  return three_hybrid5(key);
+        case 106:  return three_hybrid6(key);
+        case 107:  return three_hybrid7(key);
+        case 108:  return three_hybrid8(key);
+        case 109:  return three_hybrid9(key);
+        case 110:  return three_hybrid10(key);
+        case 111:  return three_hybrid11(key);
+        case 112:  return three_hybrid12(key);
+
+        /* four hybrid */
+        case 1001:  return four_hybrid1(key);
+        case 1002:  return four_hybrid2(key);
+        case 1003:  return four_hybrid3(key);
+        case 1004:  return four_hybrid4(key);
+        case 1005:  return four_hybrid5(key);
+        case 1006:  return four_hybrid6(key);
+        case 1007:  return four_hybrid7(key);
+        case 1008:  return four_hybrid8(key);
+        case 1009:  return four_hybrid9(key);
+        case 1010:  return four_hybrid10(key);
+        case 1011:  return four_hybrid11(key);
+        case 1012:  return four_hybrid12(key);
+
+        default:    assert(false);
+    }
+}
+
+void action_selection_consensus (State *state, uint32_t selected_action, vector<bool> &consensus_vec, bool enable_bypass, float max_q_value);
+uint32_t process_PC(uint32_t tiling, uint64_t pc);
+uint32_t process_offset(uint32_t tiling, uint32_t offset);
+uint32_t process_Page(uint32_t tiling, uint64_t page);
+uint32_t get_tile_index(uint32_t tiling, State *state, uint32_t feature);
+float getQ(uint32_t tiling, uint32_t tile_index, uint32_t action, uint32_t feature);
+void setQ(uint32_t tiling, uint32_t tile_index, uint32_t action, float value, uint32_t feature);
+float retrieveQ(State *state, uint32_t action, uint32_t feature);
+float consultQ(State *state, uint32_t action);
+uint32_t getMaxAction(State *state, vector<bool> &consensus_vec, bool enable_bypass, int type);
+uint64_t random_flag(uint64_t random_action);
+uint32_t random_select_action(bool enable_bypass);
+uint32_t chooseAction(State *state, vector<bool> &consensus_vec, bool enable_bypass, int type);
+void updateQ(State *state1, uint32_t action1, int32_t reward, State *state2, uint32_t action2, uint32_t feature);
+void learn(State *state1, uint32_t action1, int32_t reward, State *state2, uint32_t action2, vector<bool> consensus_vec, uint32_t random);
+int32_t compute_reward(Naper_EQEntry *eqentry, int32_t type);
+void assign_reward(Naper_EQEntry *eqentry, int32_t type);
+void reward_evict(Naper_EQEntry *eqentry, uint64_t obstruction);
+vector<Naper_EQEntry*> search_eq(uint64_t address, bool search_all, uint32_t set);
+vector<Naper_EQEntry*> search_eq_with_in_cache(uint64_t address, bool search_all, uint32_t set);
+void unset_in_cache(uint64_t address, uint32_t set);
+void reward(uint64_t address, bool prefetch, uint32_t set);
+void train(Naper_EQEntry *curr_evicted, Naper_EQEntry *last_evicted, uint64_t ob);
+bool track(uint64_t address, State *state, uint32_t action_index, Naper_EQEntry **tracker, bool in_cache, uint32_t set, uint64_t obstruction, vector<bool> &consensus_vec, uint32_t random, bool trigger);
+uint64_t get_pc_signature(uint64_t pc, bool hit, bool prefetch, uint32_t core);
+bool hit_eq_check(uint64_t address, uint32_t set);
+void update_eq_position(uint32_t set);
+
+
+void update_eq_position(uint32_t set)
+{
+	for(uint32_t index = 0; index < evaluation_queue[set].size(); ++index)
+	{
+		int new_position = evaluation_queue[set][index]->position - 1;
+		evaluation_queue[set][index]->position = new_position;
+	}
+	return;
+}
+
+
+void action_selection_consensus (State *state, uint32_t selected_action, vector<bool> &consensus_vec, bool enable_bypass, float max_q_value)
+{
+        uint32_t init_index = 0;
+        uint32_t m_actions = NUM_ACTION;
+        float q_value = 0.0;
+        if(enable_bypass == 1)
+        {
+                for(uint32_t feature = 0; feature < NUM_FEATURE; ++feature)
+                {
+                        for(uint32_t action = init_index; action < m_actions; ++action)
+                        {
+                                q_value = retrieveQ(state, action, feature);
+                                if(max_q_value == q_value)
+                                {
+                                        consensus_vec[feature] = true;
+                                }
+                        }
+                }
+        }
+        else
+        {
+                for(uint32_t feature = 0; feature < NUM_FEATURE; ++feature)
+                {
+                        for(uint32_t action = init_index; action < m_actions - 1; ++action)
+                        {
+                                q_value = retrieveQ(state, action, feature);
+                                if(max_q_value == q_value)
+                                {
+                                        consensus_vec[feature] = true;
+                                }
+                        }
+
+                }
+        }
+}
+
+
+
+uint32_t process_PC(uint32_t tiling, uint64_t pc)
+{
+	uint32_t m_num_tiles = NUM_TILE;
+	uint32_t raw_index = folded_xor(pc, 2); /* 32-b folded XOR */
+	uint32_t m_hash_type = HASH_TYPE;
+	raw_index = raw_index ^ tiling_offset[tiling];
+	uint32_t hashed_index = HashZoo::getHash(m_hash_type, raw_index);
+	return (hashed_index % m_num_tiles);
+}
+
+
+uint32_t process_offset(uint32_t tiling, uint32_t offset)
+{
+	uint32_t m_num_tiles = NUM_TILE;
+	offset = offset ^ tiling_offset[tiling];
+	uint32_t m_hash_type = HASH_TYPE;
+	uint32_t hashed_index = HashZoo::getHash(m_hash_type, offset);
+	return (hashed_index % m_num_tiles);
+}
+
+uint32_t process_Page(uint32_t tiling, uint64_t page)
+{
+	uint32_t m_num_tiles = NUM_TILE;
+	uint32_t raw_index = folded_xor(page, 2); /* 32-b folded XOR */
+	uint32_t m_hash_type = HASH_TYPE;
+	raw_index = raw_index ^ tiling_offset[tiling];
+	uint32_t hashed_index = HashZoo::getHash(m_hash_type, raw_index);
+	return (hashed_index % m_num_tiles);
+
+}
+
+
+uint32_t get_tile_index(uint32_t tiling, State *state, uint32_t feature)
+{
+	uint64_t pc = state->pc;
+	uint64_t page = state->page;
+	uint32_t offset = state->offset;
+
+	//feature 0 is PC; feature 1 is offset
+	switch(feature)
+	{
+		case 0: return process_PC(tiling, pc);
+		case 1: return process_Page(tiling, page);
+		default: assert(false); return 0;
+	}
+}
+
+
+
+float getQ(uint32_t tiling, uint32_t tile_index, uint32_t action, uint32_t feature)
+{
+	//cout << "getQ: " << " feature: " << feature << " tiling: " << tiling << " tile_index: " << tile_index << " action: " << action << endl;
+	assert(feature < NUM_FEATURE);
+	assert(tiling < NUM_TILING);
+	assert(tile_index < NUM_TILE);
+	assert(action < NUM_ACTION);
+	//cout << "getQ: " << " feature: " << feature << " tiling: " << tiling << " tile_index: " << tile_index << " action: " << action << " q:" << q_table[feature][tiling][tile_index][action] << endl;
+	return q_table[feature][tiling][tile_index][action];
+}
+
+
+
+void setQ(uint32_t tiling, uint32_t tile_index, uint32_t action, float value, uint32_t feature)
+{
+	uint32_t m_num_tiles = NUM_TILE;
+	uint32_t m_num_tilings = NUM_TILING;
+	uint32_t m_actions = NUM_ACTION;
+	assert(tiling < m_num_tilings);
+	assert(tile_index < m_num_tiles);
+	assert(action < m_actions);
+	q_table[feature][tiling][tile_index][action] = value;
+}
+
+
+
+float retrieveQ(State *state, uint32_t action, uint32_t feature)
+{
+	uint32_t tile_index = 0;
+	float q_value = 0.0;
+	uint32_t m_num_tilings = NUM_TILING;
+
+	for(uint32_t tiling = 0; tiling < m_num_tilings; ++tiling)
+	{
+		//cout << "retrieveQ: " << " state: " << state->pc << " action: " << action << " feature: " << feature << " tiling: " << tiling << endl;
+		tile_index = get_tile_index(tiling, state, feature);
+		//cout << "tile_index: " << tile_index << endl;
+		q_value += getQ(tiling, tile_index, action, feature);
+		//cout << "q_value: " << q_value << endl;
+	}
+
+	return q_value;
+}
+
+
+float consultQ(State *state, uint32_t action)
+{
+
+	float q_value = 0.0;
+	float max = -1000000000.0;
+
+	/* pool Q-value accross all feature tables */
+	for(uint32_t feature = 0; feature < NUM_FEATURE; ++feature)
+	{
+		//cout << "consultQ: " << " state: " << state->pc << " action: " << action << " feature: " << feature << endl;
+		float tmp = retrieveQ(state, action, feature);
+		//cout << "state: " << state->pc << " action: " << action << " feature: " << feature << " q for each feature: " << tmp << endl;
+		if(tmp >= max)
+		{
+			max = tmp;
+			q_value = tmp;
+		}
+
+	}
+	return q_value;
+}
+
+
+uint32_t getMaxAction(State *state, vector<bool> &consensus_vec, bool enable_bypass, int type)
+{
+	uint32_t m_actions = NUM_ACTION;
+	if(enable_bypass == false)
+	{
+		m_actions = NUM_ACTION - 1;
+	}
+	float max_q_value = 0.0, q_value = 0.0;
+	uint32_t selected_action = 0, init_index = 0;
+	
+	if(enable_bypass == true)
+	{ 	
+		// for cache inserting
+		for(uint32_t action = init_index; action < m_actions; ++action)
+		{
+			q_value = consultQ(state, action);
+
+			if(q_value > max_q_value)
+			{
+				max_q_value = q_value;
+				selected_action = action;
+			}
+		}
+	}
+	else
+	{	
+		// for cache hit
+		float q_value_h_ep = 0.0;
+		float q_value_m_ep = 0.0;
+		float q_value_l_ep = 0.0;
+		if(type == 0)
+		{
+			q_value_l_ep = consultQ(state, L_EP);				
+			if(q_value_l_ep > max_q_value)
+                        {
+                                max_q_value = q_value_l_ep;
+                                selected_action = L_EP;
+                        }
+
+			q_value_m_ep = consultQ(state, M_EP);
+                        if(q_value_m_ep > max_q_value)
+                        {
+                                max_q_value = q_value_m_ep;
+                                selected_action = M_EP;
+                        }
+
+			q_value_h_ep = consultQ(state, H_EP);
+                        if(q_value_h_ep > max_q_value)
+                        {
+                                max_q_value = q_value_h_ep;
+                                selected_action = H_EP;
+                        }
+		}
+		else if (type == 1)
+		{
+                        q_value_m_ep = consultQ(state, M_EP);
+                        if(q_value_m_ep > max_q_value)
+                        {
+                                max_q_value = q_value_m_ep;
+                                selected_action = M_EP;
+                        }
+
+                        q_value_h_ep = consultQ(state, H_EP);
+                        if(q_value_h_ep > max_q_value)
+                        {
+                                max_q_value = q_value_h_ep;
+                                selected_action = H_EP;
+                        }
+			
+                        q_value_l_ep = consultQ(state, L_EP);
+                        if(q_value_l_ep > max_q_value)
+                        {
+                                max_q_value = q_value_l_ep;
+                                selected_action = L_EP;
+                        }
+		}
+		else if (type == 2)
+		{
+                        q_value_h_ep = consultQ(state, H_EP);
+                        if(q_value_h_ep > max_q_value)
+                        {
+                                max_q_value = q_value_h_ep;
+                                selected_action = H_EP;
+                        }
+
+                        q_value_m_ep = consultQ(state, M_EP);
+                        if(q_value_m_ep > max_q_value)
+                        {
+                                max_q_value = q_value_m_ep;
+                                selected_action = M_EP;
+                        }
+
+                        q_value_l_ep = consultQ(state, L_EP);
+                        if(q_value_l_ep > max_q_value)
+                        {
+                                max_q_value = q_value_l_ep;
+                                selected_action = L_EP;
+                        }
+		}	
+	}
+	action_selection_consensus(state, selected_action, consensus_vec, enable_bypass, max_q_value);
+	//cout << "selected_action: " << selected_action << endl;
+	return selected_action;
+}
+
+
+
+std::default_random_engine m_generator(SEED);
+std::bernoulli_distribution m_explore(EPSILON);
+std::uniform_int_distribution<int> m_actiongen(0, NUM_ACTION-1);
+std::uniform_int_distribution<int> m_actiongen_wo_bypass(0, NUM_ACTION-2);
+
+
+uint64_t random_flag(uint64_t random_action)
+{
+/*
+    float rand_num = rand() % (N + 1) / (float)(N + 1);
+    cout << rand_num << endl;
+    if(rand_num < EPSILON)
+    {
+      random_action = 1;
+      cout << "random action" << endl;
+    }
+    else
+    {
+      random_action = 0;
+    }
+
+    return random_action;
+*/
+
+
+     if(m_explore(m_generator))
+     {
+        random_action = 1;
+        //cout << "random action" << endl;
+     }
+     else
+     {
+     	random_action = 0;
+     }
+     return random_action;
+}
+
+
+uint32_t random_select_action(bool enable_bypass)
+{
+	uint32_t action = 0; // take random action
+	if(!enable_bypass)
+	{
+		action = m_actiongen_wo_bypass(m_generator); // take random action
+	}
+	else
+	{
+		action = m_actiongen(m_generator);
+	}
+	return action;
+}
+
+
+uint32_t chooseAction(State *state, vector<bool> &consensus_vec, bool enable_bypass, int type)
+{
+	uint32_t action = 0;
+	consensus_vec.resize(NUM_FEATURE, false);
+
+	action = getMaxAction(state, consensus_vec, enable_bypass, type);
+	return action;
+}
+
+
+void updateQ(State *state1, uint32_t action1, int32_t reward, State *state2, uint32_t action2, uint32_t feature)
+{
+	uint32_t tile_index1 = 0, tile_index2 = 0;
+	float Qsa1, Qsa2;
+	uint32_t m_num_tilings = NUM_TILING;
+	float m_alpha = ALPHA;
+	float m_gamma = GAMMA;
+
+	for(uint32_t tiling = 0; tiling < m_num_tilings; ++tiling)
+	{
+		tile_index1 = get_tile_index(tiling, state1, feature);
+		tile_index2 = get_tile_index(tiling, state2, feature);
+		Qsa1 = getQ(tiling, tile_index1, action1, feature);
+		Qsa2 = getQ(tiling, tile_index2, action2, feature);
+		//cout << "setQ: " << " tiling: " << tiling << " tile_index1: " << tile_index1 << " action1 : " << action1 << " feature: " << feature << " Qsa1: " << Qsa1 << endl;
+		/* SARSA */
+		Qsa1 = Qsa1 + m_alpha * ((float)reward + m_gamma * Qsa2 - Qsa1);
+		setQ(tiling, tile_index1, action1, Qsa1, feature);
+		//cout << "setQ: " << " tiling: " << tiling << " tile_index1: " << tile_index1 << " action1 : " << action1 << " feature: " << feature << " Qsa1: " << Qsa1 << endl;
+
+	}
+}
+
+
+void learn(State *state1, uint32_t action1, int32_t reward, State *state2, uint32_t action2, vector<bool> consensus_vec, uint32_t random)
+{
+	if(!random)
+	{
+		for(uint32_t feature = 0; feature < NUM_FEATURE; ++feature)
+		{
+			if(consensus_vec[feature])
+			{
+				updateQ(state1, action1, reward, state2, action2, feature);
+			}
+		}
+	}
+	else
+	{
+	        for(uint32_t feature = 0; feature < NUM_FEATURE; ++feature)
+                {
+                	updateQ(state1, action1, reward, state2, action2, feature);
+                }
+	}
+
+}
+
+int32_t compute_reward(Naper_EQEntry *eqentry, int32_t type)
+{
+	int32_t reward = 0;
+	if(type == TYPE_AC_D_ONE)
+	{
+		reward = REWARD_AC_D_ONE;
+		act_AC_D_ONE++;
+	}
+	else if(type == TYPE_AC_D_TWO)
+        {
+                reward = REWARD_AC_D_TWO;
+                act_AC_D_TWO++;
+        }
+        else if(type == TYPE_AC_D_THREE)
+        {
+                reward = REWARD_AC_D_THREE;
+                act_AC_D_THREE++;
+        }
+        else if(type == TYPE_AC_D_FOUR)
+        {
+                reward = REWARD_AC_D_FOUR;
+                act_AC_D_FOUR++;
+        }
+        else if (type == TYPE_AC_P_ONE)
+        {
+                reward = REWARD_AC_P_ONE;
+                act_AC_P_ONE++;
+        }
+        else if (type == TYPE_AC_P_TWO)
+        {
+                reward = REWARD_AC_P_TWO;
+                act_AC_P_TWO++;
+        }
+        else if (type == TYPE_AC_P_THREE)
+        {
+                reward = REWARD_AC_P_THREE;
+                act_AC_P_THREE++;
+        }
+        else if (type == TYPE_AC_P_FOUR)
+        {
+                reward = REWARD_AC_P_FOUR;
+                act_AC_P_FOUR++;
+        }
+	else if (type == TYPE_IN_D_ONE)
+	{
+		reward = REWARD_IN_D_ONE;
+		act_IN_D_ONE++;
+	}
+        else if (type == TYPE_IN_D_TWO)
+        {
+                reward = REWARD_IN_D_TWO;
+                act_IN_D_TWO++;
+        }
+        else if (type == TYPE_IN_D_THREE)
+        {
+                reward = REWARD_IN_D_THREE;
+                act_IN_D_THREE++;
+        }
+        else if (type == TYPE_IN_D_FOUR)
+        {
+                reward = REWARD_IN_D_FOUR;
+                act_IN_D_FOUR++;
+        }
+        else if (type == TYPE_IN_P_ONE)
+        {
+                reward = REWARD_IN_P_ONE;
+                act_IN_P_ONE++;
+        }
+        else if (type == TYPE_IN_P_TWO)
+        {
+                reward = REWARD_IN_P_TWO;
+                act_IN_P_TWO++;
+        }
+        else if (type == TYPE_IN_P_THREE)
+        {
+                reward = REWARD_IN_P_THREE;
+                act_IN_P_THREE++;
+        }
+        else if (type == TYPE_IN_P_FOUR)
+        {
+                reward = REWARD_IN_P_FOUR;
+                act_IN_P_FOUR++;
+        }
+	else if (type == TYPE_IN_OB)
+	{
+		reward = REWARD_IN_OB;
+		act_IN_OB++;
+	}
+	else if (type == TYPE_IN_NOB)
+	{
+		reward = REWARD_IN_NOB;
+		act_IN_NOB++;
+	}
+	else if (type == TYPE_AC_OB)
+	{
+		reward = REWARD_AC_OB;
+		act_AC_OB++;
+	}
+	else
+	{
+		reward = REWARD_AC_NOB;
+		act_AC_NOB++;
+	}
+	return reward;
+}
+
+
+void assign_reward(Naper_EQEntry *eqentry, int32_t type)
+{
+	/* compute the reward */
+	int32_t reward = compute_reward(eqentry, type);
+	/* assign */
+	eqentry->reward = reward;
+	eqentry->reward_type = type;
+	eqentry->has_reward = true;
+	// cout << "reward: " << reward << " type : " << type << endl;
+}
+
+/* This reward function is called during eviction from EQ */
+/*
+void reward_evict(Naper_EQEntry *eqentry, uint64_t ob)
+{
+	if(eqentry->in_cache == true) 
+	{
+		if(ob == 1)
+		{
+			assign_reward(eqentry, TYPE_IN_OB);
+			count_IN_OB++;
+		}
+		else
+		{
+			assign_reward(eqentry, TYPE_IN_NOB);
+			count_IN_NOB++;
+		}
+	}
+	else
+	{
+                if(ob == 1)
+                {
+                        assign_reward(eqentry, TYPE_AC_OB);
+                	count_AC_OB++;
+		}
+                else
+                {
+                        assign_reward(eqentry, TYPE_AC_NOB);
+                	count_AC_NOB++;
+		}
+	}	
+	eqentry->has_reward = true;
+}
+*/
+
+
+void reward_evict(Naper_EQEntry *eqentry, uint64_t ob)
+{
+        if(eqentry->trigger == false)
+        {
+         	if(eqentry->action_index == BYPASSING)
+		{
+			if(ob == 1)
+			{
+				assign_reward(eqentry, TYPE_AC_OB);
+                        	count_AC_OB++;
+			}
+			else
+			{
+                        	assign_reward(eqentry, TYPE_AC_NOB);
+                        	count_AC_NOB++;				
+			}
+
+		}
+		else
+		{
+                	if(ob == 1)
+               		{
+                        	assign_reward(eqentry, TYPE_IN_OB);
+                       		count_IN_OB++;
+               	 	}	
+               		else
+                	{
+                        	assign_reward(eqentry, TYPE_IN_NOB);
+                        	count_IN_NOB++;
+                	}
+		}
+	}	
+	else
+	{
+                if(eqentry->action_index == H_EP)
+                {
+                        if(ob == 1)
+                        {
+                                assign_reward(eqentry, TYPE_AC_OB);
+                                count_AC_OB++;
+                        }
+                        else
+                        {
+                                assign_reward(eqentry, TYPE_AC_NOB);
+                                count_AC_NOB++;
+                        }
+
+                }
+                else
+                {
+                        if(ob == 1)
+                        {
+                                assign_reward(eqentry, TYPE_IN_OB);
+                                count_IN_OB++;
+                        }
+                        else
+                        {
+                                assign_reward(eqentry, TYPE_IN_NOB);
+                                count_IN_NOB++;
+                        }
+                }
+	}
+
+        eqentry->has_reward = true;
+}
+
+
+
+
+vector<Naper_EQEntry*> search_eq(uint64_t address, bool search_all, uint32_t set)
+{
+	vector<Naper_EQEntry*> entries;
+	for(uint32_t index = 0; index < evaluation_queue[set].size(); ++index)
+	{
+		if(evaluation_queue[set][index]->address == address)
+		{
+			entries.push_back(evaluation_queue[set][index]);
+			if(!search_all) break;
+		}
+	}
+	return entries;
+}
+
+bool hit_eq_check(uint64_t address, uint32_t set)
+{
+	vector<Naper_EQEntry*> eqentries = search_eq(address, true, set);
+	if(eqentries.empty())
+	{
+		return false;
+	}
+	for(uint32_t index = 0; index < eqentries.size(); ++index)
+	{
+		Naper_EQEntry *eqentry = eqentries[index];
+		if(eqentry->has_reward)
+		{
+			continue;
+		}	
+		else
+		{
+			return true;
+		}
+	}	
+	return false;
+}
+
+
+
+vector<Naper_EQEntry*> search_eq_with_in_cache(uint64_t address, bool search_all, uint32_t set)
+{
+        vector<Naper_EQEntry*> entries;
+        for(uint32_t index = 0; index < evaluation_queue[set].size(); ++index)
+        {
+                if(evaluation_queue[set][index]->address == address && evaluation_queue[set][index]->in_cache == true)
+                {
+                        entries.push_back(evaluation_queue[set][index]);
+                        if(!search_all) break;
+                }
+        }
+        return entries;
+}
+
+
+void unset_in_cache(uint64_t address, uint32_t set)
+{
+	bool search_all = true;
+	vector<Naper_EQEntry*> eqentries = search_eq_with_in_cache(address, search_all, set);
+	if(eqentries.empty())
+        {
+                return;
+        }
+	for(uint32_t index = 0; index < eqentries.size(); ++index)
+        {	
+		Naper_EQEntry *eqentry = eqentries[index];
+		if(eqentry->in_cache)
+		{
+			eqentry->in_cache = false;				
+		}
+	}
+
+}
+
+
+
+
+
+/* This reward fucntion is called after seeing a demand/prefetch access to the address in the EQ
+ *  * Currently, it just rewards the oldest state-action pair to the address
+ *   */
+
+void reward(uint64_t address, bool prefetch, uint32_t set)
+{
+	bool search_all = true;
+	if(REWARD_ALL == 1)
+	{
+		search_all = true;
+	}
+	vector<Naper_EQEntry*> eqentries = search_eq(address, search_all, set);
+	if(eqentries.empty())
+	{
+		return;
+	}
+
+	for(uint32_t index = 0; index < eqentries.size(); ++index)
+	{
+		Naper_EQEntry *eqentry = eqentries[index];
+		/* Do not compute reward if already has a reward.*/
+		if(eqentry->has_reward)
+		{
+			continue;
+		}
+		else
+		{
+			if(eqentry->in_cache == true)
+			{
+				if(prefetch == false)
+				{
+					if(eqentry->position >= 21 && eqentry->position <= 27)
+					{
+						assign_reward(eqentry, TYPE_AC_D_ONE);
+						count_AC_D_ONE++;
+					}
+					else if (eqentry->position >= 14 && eqentry->position <= 20)
+					{
+						assign_reward(eqentry, TYPE_AC_D_TWO);
+						count_AC_D_TWO++;
+					}
+                                        else if (eqentry->position >= 7 && eqentry->position <= 13)
+                                        {
+                                                assign_reward(eqentry, TYPE_AC_D_THREE);
+                                        	count_AC_D_THREE++;
+					}
+					else
+					{
+						assign_reward(eqentry, TYPE_AC_D_FOUR);
+						count_AC_D_FOUR++;
+					}
+					count_AC_D++;
+				}
+				else
+				{
+                                        if(eqentry->position >= 21 && eqentry->position <= 27)
+                                        {
+                                                assign_reward(eqentry, TYPE_AC_P_ONE);
+                                 		count_AC_P_ONE++;
+				        }
+                                        else if (eqentry->position >= 14 && eqentry->position <= 20)
+                                        {
+                                                assign_reward(eqentry, TYPE_AC_P_TWO);
+                                        	count_AC_P_TWO++;
+					}
+                                        else if (eqentry->position >= 7 && eqentry->position <= 13)
+                                        {
+                                                assign_reward(eqentry, TYPE_AC_P_THREE);
+                                        	count_AC_P_THREE++;
+					}
+                                        else
+                                        {
+                                                assign_reward(eqentry, TYPE_AC_P_FOUR);
+                                        	count_AC_P_FOUR++;
+					}						
+					count_AC_P++;
+				}	
+			}
+			else
+			{
+				if(prefetch == false)
+                                {
+                                        if(eqentry->position >= 21 && eqentry->position <= 27)
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_D_ONE);
+                                 		count_IN_D_ONE++;
+				        }
+                                        else if (eqentry->position >= 14 && eqentry->position <= 20)
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_D_TWO);
+                                        	count_IN_D_TWO++;
+					}
+                                        else if (eqentry->position >= 7 && eqentry->position <= 13)
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_D_THREE);
+                                        	count_IN_D_THREE++;
+					}
+                                        else
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_D_FOUR);
+                                        	count_IN_D_FOUR++;
+					}
+                         		count_IN_D++;
+			        }
+                                else
+                                {
+                                        if(eqentry->position >= 21 && eqentry->position <= 27)
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_P_ONE);
+                                        	count_IN_P_ONE++;
+					}
+                                        else if (eqentry->position >= 14 && eqentry->position <= 20)
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_P_TWO);
+                                        	count_IN_P_TWO++;
+					}
+                                        else if (eqentry->position >= 7 && eqentry->position <= 13)
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_P_THREE);
+                                        	count_IN_P_THREE++;
+					}
+                                        else
+                                        {
+                                                assign_reward(eqentry, TYPE_IN_P_FOUR);
+                                        	count_IN_P_FOUR++;
+					}
+                                	count_IN_P++;
+				}
+			}
+			eqentry->has_reward = true;
+			return;
+		}
+	}
+
+}
+
+
+/* train the agent */
+
+void train(Naper_EQEntry *curr_evicted, Naper_EQEntry *last_evicted, uint64_t ob)
+{
+	if(!last_evicted->has_reward)
+	{
+		reward_evict(last_evicted, ob);
+	}
+	learn(last_evicted->state, last_evicted->action_index, last_evicted->reward, curr_evicted->state, curr_evicted->action_index,last_evicted->consensus_vec, last_evicted->random);
+}
+
+
+/* Returns true if the address is not already present in EQ
+ * false otherwise */
+
+    /*
+      STEP 6:
+      Using the evicted entry from the Evaluation Queue to train the Q Table
+     */
+
+bool track(uint64_t address, State *state, uint32_t action_index, Naper_EQEntry **tracker, bool in_cache, uint32_t set, uint32_t cpu, uint64_t obstruction[NUM_CPUS], vector<bool> &consensus_vec, uint32_t random, bool trigger)
+{
+	bool new_addr = true;
+	bool search_all = true;
+	vector<Naper_EQEntry*> eqentries = search_eq(address, search_all, set);
+	if(eqentries.empty())
+	{
+		new_addr = true;
+	}
+	else
+	{
+		new_addr = false;
+	}
+	Naper_EQEntry *eqentry = NULL;
+	// cout << "evaluation_queue[set].size() >= EQ_SIZE : " << (evaluation_queue[set].size() >= EQ_SIZE) << endl; 
+	if(evaluation_queue[set].size() >= eq_size)
+	{
+		eqentry = evaluation_queue[set].front();
+		evaluation_queue[set].pop_front();
+		if(last_evicted_eqentry[set])
+		{
+			train(eqentry, last_evicted_eqentry[set], obstruction[last_evicted_eqentry[set]->cpu]);
+			delete last_evicted_eqentry[set]->state;
+			delete last_evicted_eqentry[set];
+		}
+		last_evicted_eqentry[set] = eqentry;
+	}
+	Naper_EQEntry *new_eqentry = NULL;
+	new_eqentry = new Naper_EQEntry(address, state, action_index, in_cache, cpu);
+	new_eqentry->consensus_vec = consensus_vec;
+	new_eqentry->random = random;
+	new_eqentry->trigger = trigger;
+	update_eq_position(set);
+	evaluation_queue[set].push_back(new_eqentry);
+
+	(*tracker) = new_eqentry;
+	return new_addr;
+}
+
+uint64_t get_pc_signature(uint64_t pc, bool hit, bool prefetch, uint32_t core)
+{
+        if (NUM_CPUS == 1)
+        {
+                pc = pc << 1;
+                if(hit)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 1;
+                if (prefetch)
+                {
+                        pc = pc | 1;
+                }
+        }
+        else if (NUM_CPUS == 4)
+        {
+                pc = pc << 1;
+                if(hit)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 1;
+                if(prefetch)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 2;
+                pc = pc | core;
+        }
+        else if (NUM_CPUS == 8)
+        {
+                pc = pc << 1;
+                if(hit)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 1;
+                if(prefetch)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 3;
+                pc = pc | core;
+        }
+        else
+        {
+                pc = pc << 1;
+                if(hit)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 1;
+                if(prefetch)
+                {
+                        pc = pc | 1;
+                }
+                pc = pc << 4;
+                pc = pc | core;
+        }
+        return pc;
+}
+
+
+// initialize replacement state
+void CACHE::llc_initialize_replacement()
+{
+	for(int i = 0; i < LLC_SET; i++)
+	{
+		victim_lru[i] = 0;
+		last_evicted_eqentry[i] = NULL;
+
+	}
+
+	cout << "llc_initialize_replacement begin "<< endl;
+	bool zero_init = false;
+	// eviction prrority
+	cout << "initialize rrpv  table " << endl;
+        for (int i = 0; i < LLC_SET; i++)
+        {
+                for (int j = 0; j < LLC_WAY; j++)
+                {
+                        rrpv[i][j] = maxRRPV;
+			is_prefetch[i][j] = FALSE;
+                }
+        }
+	
+	// q table
+        float m_init_value;
+        float gamma = GAMMA;
+	cout << "initialize q table " << endl;
+        if(zero_init)
+        {
+                m_init_value = 0;
+        }
+        else
+        {
+                m_init_value = (float)1ul/(1-gamma);
+       		cout << "m_init_value: " << m_init_value << endl;
+	 }
+        for(uint32_t feature = 0; feature < NUM_FEATURE; ++feature)
+        {
+                for(uint32_t tiling = 0; tiling < NUM_TILING; ++tiling)
+                {
+                        for(uint32_t tile = 0; tile < NUM_TILE; ++tile)
+                        {
+                                for(uint32_t action = 0; action < NUM_ACTION; ++action)
+                                {
+                                        q_table[feature][tiling][tile][action] = m_init_value;
+                                }
+                        }
+                }
+        }
+	cout << "initialize sampled sets " << endl;
+	// which sets are sampled sets 
+	int leaders = 0;
+    	while(leaders < NUM_LEADER_SETS)
+	{
+		int LLC_SETS = LLC_SET;
+		int  randval = rand() % LLC_SETS;
+		if(set_sample[randval] == 0)
+		{
+			set_sample[randval] = 1;
+			leaders++;
+      		}
+    	}
+
+	//cout << "finish llc_initialize_replacement " << endl;
+}
+
+
+// based on the state, select an action
+uint32_t CACHE::llc_management_decision(uint32_t cpu, uint32_t set, uint32_t way, uint64_t full_addr, uint64_t ip, uint64_t victim_addr, uint32_t type, uint8_t hit, uint64_t obstruction[NUM_CPUS])
+{
+	// cout << "strat llc_management_decision " << endl;
+	// Do not predict or learn WRITEBACK requests
+	if(type == WRITEBACK)
+	{
+		return H_EP;
+	}
+
+	// If a sampled set is accessed, search the corresponding EQ with the requested address
+	if(set_sample[set] == 1)
+	{
+		if(hit)
+		{
+			actual_sampled_set_hit++;
+		}
+		else
+		{
+			actual_sampled_set_miss++;
+		}
+
+		if(hit_eq_check(full_addr, set))
+		{
+			eq_hit++;
+			if(hit)
+			{
+				eq_hit_cache_hit++;
+			}
+			else
+			{
+				eq_hit_cache_miss++;
+			}
+		}
+		else
+		{
+			if(hit)
+			{
+				eq_miss_cache_hit++;
+			}
+			else
+			{
+				eq_miss_cache_miss++;	
+			}	
+		}
+		reward(full_addr, type == PREFETCH, set);
+	}
+
+	uint64_t page = full_addr >> LOG2_PAGE_SIZE;
+        uint32_t offset = (full_addr >> LOG2_BLOCK_SIZE) & ((1ull << (LOG2_PAGE_SIZE - LOG2_BLOCK_SIZE)) - 1);
+        State *state = new State();
+        state->pc = get_pc_signature(ip, false, type == PREFETCH, cpu);
+        state->address = full_addr;
+        state->page = page;
+        state->offset = offset;
+        state->core = cpu;
+
+        vector<bool> consensus_vec;
+        uint32_t action = 0;
+        uint32_t random_action = 0;
+        random_action = random_flag(random_action);
+       
+	if(!hit)
+	{
+		// Select an ction between insert the incoming block with H_EP, M_EP, L_EP or  Bypass LLC
+		if(random_action == 1)
+        	{
+                	action = random_select_action(true);
+        	}
+        	else
+        	{
+                	action = chooseAction(state, consensus_vec, true, 0);
+        	}
+		//cout << " =========== MISS ============" << endl;
+		//cout << "random : " << random_action << endl;
+        	//cout << "action is : " << action << endl;
+		if(random_action == 0)
+		{
+			if(action == 0)
+                	{
+                        	miss_action_zero++;
+                	}
+                	else if (action == 1)
+                	{
+                        	miss_action_one++;
+                	}
+                	else if (action == 2)
+                	{
+                        	miss_action_two++;
+                	}
+                	else
+                	{
+                        	miss_action_three++;
+                	}
+		}
+		else
+		{
+                        if(action == 0)
+                        {
+                                miss_action_zero_random++;
+                        }
+                        else if (action == 1)
+                        {
+                                miss_action_one_random++;
+                        }
+                        else if (action == 2)
+                        {
+                                miss_action_two_random++;
+                        }
+                        else
+                        {
+                                miss_action_three_random++;
+                        }
+		}
+	}
+        if(hit)
+        {
+		// Select an action between update the EPV of the hit block with H_EP, M_EP, L_EP
+                if(random_action == 1)
+                {
+                        action = random_select_action(false);
+                }
+                else
+                {
+            		if((type == PREFETCH) && is_prefetch[set][way])
+			{
+				action = chooseAction(state, consensus_vec, false, 1);
+			}
+			else
+			{
+				if(is_prefetch[set][way])
+				{
+					is_prefetch[set][way] = FALSE;
+					action = chooseAction(state, consensus_vec, false, 2);
+				}
+				else
+				{
+					action = chooseAction(state, consensus_vec, false, 0);
+				}
+			}
+                }
+		//cout << " =========== HIT ============" << endl;
+		//cout << "random : " << random_action << endl;
+        	//cout << "action is : " << action << endl;
+		if(random_action == 0)
+		{
+			if(action == 0)
+			{
+				hit_action_zero++;
+			}
+			else if (action == 1)
+			{
+				hit_action_one++;
+			}
+			else if (action == 2)
+			{
+				hit_action_two++;
+			}
+			else
+			{
+				hit_action_three++;
+			}
+		}
+		else
+		{
+                        if(action == 0)
+                        {
+                                hit_action_zero_random++;
+                        }
+                        else if (action == 1)
+                        {
+                                hit_action_one_random++;
+                        }
+                        else if (action == 2)
+                        {
+                                hit_action_two_random++;
+                        }
+                        else
+                        {
+                                hit_action_three_random++;
+                        }
+		}
+        }      
+	
+        if(set_sample[set] == 1)
+        {
+		bool trigger = false;
+		if(hit)
+		{
+			trigger = true;
+		}
+                Naper_EQEntry *eqentry = NULL;
+		bool new_addr;
+		if(action == BYPASSING)
+		{	
+			new_addr = track(full_addr, state, action,  &eqentry, false, set, cpu, obstruction, consensus_vec, random_action, trigger);
+		}
+		else
+		{
+			new_addr = track(full_addr, state, action,  &eqentry, true, set, cpu, obstruction, consensus_vec, random_action, trigger);
+		}
+		//cout << "counter: " << print_counter << endl;
+		//cout << "random: " << random_action << endl;
+		//cout << "consensus_vec_0: " << (int)consensus_vec[0] << endl;
+		//cout << "consensus_vec_1: " << (int)consensus_vec[1] << endl;
+		//cout << "hit: " << (int)hit << endl;
+		//cout << "action: " << action << endl;
+		//cout << "===============================" << endl;
+		//print_counter++;
+                //if(new_addr)
+                //{
+                //        eqentry->consensus_vec = consensus_vec;
+                //}
+        }
+	return action; 
+}
+
+
+// find replacement victim
+uint32_t CACHE::llc_find_victim(uint32_t cpu, uint64_t instr_id, uint32_t set, const BLOCK *current_set, uint64_t ip, uint64_t full_addr, uint32_t type, uint32_t action)
+{
+
+	if(action == BYPASSING)
+	{
+		return LLC_WAY;
+	}
+	int victim_way = 0;
+	bool has_victim = false;	
+        while (has_victim == false)
+        {
+        	for (int i = 0; i < LLC_WAY; i++)
+		{
+            		if (rrpv[set][i] == maxRRPV) 
+			{ 	// found victim
+                		victim_way =  i;
+				has_victim = true;
+        			break;
+	    		}
+		}
+		if(has_victim == false)
+		{
+        		for (int i = 0; i < LLC_WAY; i++)
+			{
+            			rrpv[set][i]++;
+			}
+		}
+    	}
+
+	unset_in_cache(block[set][victim_way].full_addr, set);
+	// cout << "llc_find_victim" << endl;
+	return victim_way;
+
+}
+
+
+// called on every cache hit and cache fill
+void CACHE::llc_update_replacement_state(uint32_t cpu, uint32_t set, uint32_t way, uint64_t full_addr, uint64_t ip, uint64_t victim_addr, uint32_t type, uint8_t hit, uint32_t action)
+{
+	// Bypassing, do not need to update the LLC
+	if(way == NUM_WAY || action == BYPASSING)
+	{
+		return;
+	}
+
+	is_prefetch[set][way] = (type == PREFETCH);
+	
+        if(type == WRITEBACK)
+        {
+		if(!hit)
+		{
+			rrpv[set][way] = maxRRPV;
+		} 
+               return;
+        }
+
+	if(action == H_EP)
+	{
+		rrpv[set][way] = maxRRPV;
+	}
+	else if (action == L_EP)
+	{
+		rrpv[set][way] = (type == PREFETCH) ? 1 : 0;
+	}
+	else if (action == M_EP)
+	{
+		rrpv[set][way] = maxRRPV-1;
+	}
+
+}
+
+
+
+
+// use this function to print out your own stats at the end of simulation
+void CACHE::llc_replacement_final_stats()
+{
+	cout << "eq_hit: " << eq_hit << endl;
+	cout << "actual_sampled_set_hit: " << actual_sampled_set_hit << endl;
+	cout << "actual_sampled_set_miss: " << actual_sampled_set_miss << endl;
+	cout << "eq_miss_cache_hit: " << eq_miss_cache_hit << endl;
+	cout << "eq_hit_cache_hit: " << eq_hit_cache_hit << endl;
+	cout << "eq_miss_cache_miss: " << eq_miss_cache_miss << endl;
+	cout << "eq_hit_cache_miss: " << eq_hit_cache_miss << endl;
+
+
+	cout << "cont_AC_D_ONE: " << count_AC_D_ONE << endl;
+	cout << "count_AC_D_TWO: " << count_AC_D_TWO << endl;
+	cout << "count_AC_D_THREE: " << count_AC_D_THREE << endl;
+	cout << "count_AC_D_FOUR: " << count_AC_D_FOUR << endl;
+	cout << "count_AC_D: " << count_AC_D << endl;
+	
+	cout << "count_AC_P_ONE: " << count_AC_P_ONE << endl;	
+	cout << "count_AC_P_TWO: " << count_AC_P_TWO << endl;
+	cout << "count_AC_P_THREE: " << count_AC_P_THREE << endl;
+	cout << "count_AC_P_FOUR: " << count_AC_P_FOUR << endl;	
+	cout << "count_AC_P: " << count_AC_P << endl;
+
+	cout << "count_IN_D_ONE: " << count_IN_D_ONE << endl;
+	cout << "count_IN_D_TWO: " << count_IN_D_TWO << endl;
+	cout << "count_IN_D_THREE: " << count_IN_D_THREE << endl;
+	cout << "count_IN_D_FOUR: " << count_IN_D_FOUR << endl;
+	cout << "count_IN_D: " << count_IN_D << endl;
+
+	cout << "count_IN_P_ONE: " << count_IN_P_ONE << endl;
+	cout << "count_IN_P_TWO: " << count_IN_P_TWO << endl;
+	cout << "count_IN_P_THREE: " << count_IN_P_THREE << endl;
+	cout << "count_IN_P_FOUR: " << count_IN_P_FOUR << endl;
+	cout << "count_IN_P: " << count_IN_P << endl;
+	
+	cout << "count_IN_OB: " << count_IN_OB << endl;
+	cout << "count_IN_NOB: " << count_IN_NOB << endl;
+	cout << "count_AC_OB: " << count_AC_OB << endl;
+	cout << "count_AC_NOB: " << count_AC_NOB << endl;
+
+	cout << "act_AC_D_ONE: " << act_AC_D_ONE << endl;
+	cout << "act_AC_D_TWO: " << act_AC_D_TWO << endl;
+	cout << "act_AC_D_THREE: " << act_AC_D_THREE << endl;
+	cout << "act_AC_D_FOUR: " << act_AC_D_FOUR << endl;
+
+	cout << "act_AC_P_ONE: " << act_AC_P_ONE << endl;
+	cout << "act_AC_P_TWO: " << act_AC_P_TWO << endl;
+	cout << "act_AC_P_THREE: " << act_AC_P_THREE << endl;
+	cout << "act_AC_P_FOUR: " << act_AC_P_FOUR << endl;
+
+	cout << "act_IN_D_ONE: " << act_IN_D_ONE << endl;
+	cout << "act_IN_D_TWO: " << act_IN_D_TWO << endl;
+	cout << "act_IN_D_THREE: " << act_IN_D_THREE << endl;
+	cout << "act_IN_D_FOUR: " << act_IN_D_FOUR << endl;
+
+	cout << "act_IN_P_ONE: " << act_IN_P_ONE << endl;
+	cout << "act_IN_P_TWO: " << act_IN_P_TWO << endl;
+	cout << "act_IN_P_THREE: " << act_IN_P_THREE << endl;
+	cout << "act_IN_P_FOUR: " << act_IN_P_FOUR << endl;
+
+	cout << "act_IN_OB: " << act_IN_OB << endl;
+	cout << "act_IN_NOB: " << act_IN_NOB << endl;
+	cout << "act_AC_OB: " << act_AC_OB << endl;
+	cout << "act_AC_NOB: " << act_AC_NOB << endl;
+
+	cout << "hit_action_zero: " << hit_action_zero << endl;
+	cout << "hit_action_one: " << hit_action_one << endl;
+	cout << "hit_action_two: " << hit_action_two << endl;
+	cout << "hit_action_three: " << hit_action_three << endl;
+	cout << "miss_action_zero: " << miss_action_zero << endl;
+	cout << "miss_action_one: " << miss_action_one << endl;
+	cout << "miss_action_two: " << miss_action_two << endl;
+	cout << "miss_action_three: " << miss_action_three << endl;
+
+        cout << "hit_action_zero_ramdom: " << hit_action_zero_random << endl;
+        cout << "hit_action_one_random: " << hit_action_one_random << endl;
+        cout << "hit_action_two_random: " << hit_action_two_random << endl;
+        cout << "hit_action_three_random: " << hit_action_three_random << endl;
+        cout << "miss_action_zero_random: " << miss_action_zero_random << endl;
+        cout << "miss_action_one_random: " << miss_action_one_random << endl;
+        cout << "miss_action_two_random: " << miss_action_two_random << endl;
+        cout << "miss_action_three_random: " << miss_action_three_random << endl;
+
+}
+
+
+void CACHE::llc_replacement_broadcast_bw(uint8_t bw_level)
+{
+	//cout << (int)bw_level << endl;
+}
+
+
+void CACHE::llc_replacement_broadcast_cal_level(uint32_t cal)
+{
+	c = cal;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
